@@ -25,11 +25,27 @@ const expenseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate expense number
 expenseSchema.pre("save", async function (next) {
   if (!this.expenseNumber) {
-    const count = await mongoose.model("Expense").countDocuments();
-    this.expenseNumber = `EXP-${String(count + 1001).padStart(4, "0")}`;
+    const latest = await mongoose.model("Expense").findOne({
+      expenseNumber: /^EXP-[0-9]+$/
+    }).sort({ expenseNumber: -1 });
+
+    let nextSeq = 1001;
+    if (latest && latest.expenseNumber) {
+      const parts = latest.expenseNumber.split("-");
+      const num = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(num)) {
+        nextSeq = num + 1;
+      }
+    }
+
+    let expenseNumber = `EXP-${String(nextSeq).padStart(4, "0")}`;
+    while (await mongoose.model("Expense").exists({ expenseNumber })) {
+      nextSeq++;
+      expenseNumber = `EXP-${String(nextSeq).padStart(4, "0")}`;
+    }
+    this.expenseNumber = expenseNumber;
   }
   next();
 });

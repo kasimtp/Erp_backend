@@ -130,8 +130,24 @@ export const createPurchase = async (req, res, next) => {
     }
 
     const prefix = typePrefixMap[documentType] || "PO";
-    const count = await PurchaseDocument.countDocuments({ documentType });
-    const documentNumber = `${prefix}-${1001 + count}`;
+    const latestDoc = await PurchaseDocument.findOne({
+      documentNumber: new RegExp(`^${prefix}-[0-9]+$`)
+    }).sort({ documentNumber: -1 });
+
+    let nextSeq = 1001;
+    if (latestDoc && latestDoc.documentNumber) {
+      const parts = latestDoc.documentNumber.split("-");
+      const num = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(num)) {
+        nextSeq = num + 1;
+      }
+    }
+
+    let documentNumber = `${prefix}-${nextSeq}`;
+    while (await PurchaseDocument.exists({ documentNumber })) {
+      nextSeq++;
+      documentNumber = `${prefix}-${nextSeq}`;
+    }
 
     let subtotal = 0;
     let taxTotal = 0;
@@ -234,8 +250,24 @@ export const recordSupplierPayment = async (req, res, next) => {
       return next(new AppError("Purchase bill is already fully paid", 400));
     }
 
-    const count = await SupplierPayment.countDocuments();
-    const paymentNumber = `PPAY-${1001 + count}`;
+    const latestPayment = await SupplierPayment.findOne({
+      paymentNumber: /^PPAY-[0-9]+$/
+    }).sort({ paymentNumber: -1 });
+
+    let nextSeq = 1001;
+    if (latestPayment && latestPayment.paymentNumber) {
+      const parts = latestPayment.paymentNumber.split("-");
+      const num = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(num)) {
+        nextSeq = num + 1;
+      }
+    }
+
+    let paymentNumber = `PPAY-${nextSeq}`;
+    while (await SupplierPayment.exists({ paymentNumber })) {
+      nextSeq++;
+      paymentNumber = `PPAY-${nextSeq}`;
+    }
 
     const payment = await SupplierPayment.create({
       paymentNumber,

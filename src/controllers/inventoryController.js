@@ -128,8 +128,24 @@ export const createStockAdjustment = async (req, res, next) => {
     prod.stockQuantity = newStock;
     await prod.save();
 
-    const count = await StockAdjustment.countDocuments();
-    const adjustmentNumber = `ADJ-${1001 + count}`;
+    const latestAdj = await StockAdjustment.findOne({
+      adjustmentNumber: /^ADJ-[0-9]+$/
+    }).sort({ adjustmentNumber: -1 });
+
+    let nextSeq = 1001;
+    if (latestAdj && latestAdj.adjustmentNumber) {
+      const parts = latestAdj.adjustmentNumber.split("-");
+      const num = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(num)) {
+        nextSeq = num + 1;
+      }
+    }
+
+    let adjustmentNumber = `ADJ-${nextSeq}`;
+    while (await StockAdjustment.exists({ adjustmentNumber })) {
+      nextSeq++;
+      adjustmentNumber = `ADJ-${nextSeq}`;
+    }
 
     const adjustment = await StockAdjustment.create({
       adjustmentNumber,
