@@ -341,3 +341,170 @@ export const deleteSale = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get quotation specific metrics
+// @route   GET /api/sales/quotations/metrics
+// @access  Private
+export const getQuotationMetrics = async (req, res, next) => {
+  try {
+    const quotes = await SaleDocument.find({ documentType: "quotation" });
+
+    let totalQuoted = 0;
+    let approvedQuoted = 0;
+    let pendingQuoted = 0;
+    let approvedCount = 0;
+    let pendingCount = 0;
+    let draftCount = 0;
+
+    quotes.forEach((q) => {
+      const amt = q.grandTotal || 0;
+      totalQuoted += amt;
+      if (q.status === "approved" || q.status === "completed") {
+        approvedCount++;
+        approvedQuoted += amt;
+      } else if (q.status === "draft") {
+        draftCount++;
+      } else {
+        pendingCount++;
+        pendingQuoted += amt;
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalCount: quotes.length,
+        totalQuoted: Math.round(totalQuoted * 100) / 100,
+        approvedCount,
+        approvedQuoted: Math.round(approvedQuoted * 100) / 100,
+        pendingCount,
+        pendingQuoted: Math.round(pendingQuoted * 100) / 100,
+        draftCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Convert quotation to sales invoice
+// @route   POST /api/sales/:id/convert-to-invoice
+// @access  Private
+export const convertQuotationToInvoice = async (req, res, next) => {
+  try {
+    const quote = await SaleDocument.findById(req.params.id);
+    if (!quote) {
+      return next(new AppError("Quotation document not found", 404));
+    }
+
+    if (quote.documentType !== "quotation") {
+      return next(new AppError("Only quotations can be converted to invoices", 400));
+    }
+
+    const customer = await Customer.findById(quote.customer);
+    if (!customer) {
+      return next(new AppError("Customer not found for quotation", 404));
+    }
+
+    // Generate INV number
+    const latestDoc = await SaleDocument.findOne({
+      documentNumber: new RegExp("^INV-[0-9]+$"),
+    }).sort({ documentNumber: -1 });
+
+    let nextSeq = 1001;
+    if (latestDoc && latestDoc.documentNumber) {
+      const parts = latestDoc.documentNumber.split("-");
+      const num = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(num)) {
+        nextSeq = num + 1;
+      }
+    }
+
+    let documentNumber = `INV-${nextSeq}`;
+    while (await SaleDocument.exists({ documentNumber })) {
+      nextSeq++;
+      documentNumber = `INV-${nextSeq}`;
+    }
+
+    // Deduct stock for each line item
+    for (const item of quote.items) {
+      const prod = await Product.findById(item.product);
+      if (prod) {
+        prod.stockQuantity = Math.max(0, prod.stockQuantity - (item.quantity || 1));
+        await prod.save();
+      }
+    }
+
+    // Update customer outstanding debt balance
+    customer.balance = (customer.balance || 0) + quote.grandTotal;
+    await customer.save();
+
+    // Create new Invoice
+    const invoice = await SaleDocument.create({
+      documentType: "invoice",
+      documentNumber,
+      customer: customer._id,
+      customerName: customer.name,
+      items: quote.items,
+      subtotal: quote.subtotal,
+      taxTotal: quote.taxTotal,
+      discountTotal: quote.discountTotal,
+      grandTotal: quote.grandTotal,
+      amountPaid: 0,
+      balanceDue: quote.grandTotal,
+      paymentStatus: "unpaid",
+      status: "sent",
+      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      notes: `Converted from Quotation ${quote.documentNumber}. ${quote.notes || ""}`.trim(),
+      createdBy: req.user._id,
+    });
+
+    // Mark quotation as approved
+    quote.status = "approved";
+    await quote.save();
+
+    const populatedInvoice = await SaleDocument.findById(invoice._id)
+      .populate("customer")
+      .populate("items.product");
+
+    res.status(201).json({
+      success: true,
+      message: `Quotation ${quote.documentNumber} successfully converted to Invoice ${documentNumber}`,
+      data: {
+        invoice: populatedInvoice,
+        quotation: quote,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update sale document status
+// @route   PATCH /api/sales/:id/status
+// @access  Private
+export const updateSaleStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    if (!status) {
+      return next(new AppError("Please provide a valid status", 400));
+    }
+
+    const sale = await SaleDocument.findById(req.params.id);
+    if (!sale) {
+      return next(new AppError("Document not found", 404));
+    }
+
+    sale.status = status;
+    await sale.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Status updated successfully",
+      data: sale,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

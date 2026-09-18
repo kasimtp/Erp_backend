@@ -1,7 +1,15 @@
+import dns from "dns";
 import mongoose from "mongoose";
 import { seedPurchaseData } from "../utils/seedPurchaseData.js";
 import { seedRolesAndUsers } from "../utils/seedRolesAndUsers.js";
 import { seedSalesData } from "../utils/seedSalesData.js";
+
+// Fix for Node.js SRV record lookup issue (querySrv EBADRESP)
+try {
+  dns.setServers(["8.8.8.8", "8.8.4.4"]);
+} catch (e) {
+  // Ignore if custom DNS cannot be set
+}
 
 const connectDB = async () => {
   try {
