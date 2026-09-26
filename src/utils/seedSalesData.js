@@ -16,7 +16,7 @@ export async function seedSalesData() {
           sku: "PRD-1001",
           name: "Enterprise ERP Software License",
           category: "Software",
-          description: "Annual recurring license for Orbit ERP Enterprise Suite",
+          description: "Annual recurring license for CRM ERP Enterprise Suite",
           costPrice: 450.0,
           sellingPrice: 1200.0,
           stockQuantity: 50,
@@ -145,7 +145,7 @@ export async function seedSalesData() {
           paymentStatus: "unpaid",
           status: "sent",
           dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          notes: "Thank you for choosing Orbit Business Suite!",
+          notes: "Thank you for choosing CRM Business Suite!",
           createdBy: adminUser._id,
         });
 
